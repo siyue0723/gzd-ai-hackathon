@@ -18,9 +18,18 @@ model User {
   password  String
   name      String?
   avatar    String?
+  coins     Int      @default(10) // 用户代币数量
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  sessions  Session[]
+  
+  // 关联关系
+  sessions       Session[]
+  studyCards     StudyCard[]
+  learningRecords LearningRecord[]
+  quizResults    QuizResult[]
+  sharedCards    SharedCard[]
+  cardPurchases  CardPurchase[]
+  studySessions  StudySession[]
 
   @@map("users")
 }
@@ -35,4 +44,133 @@ model Session {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("sessions")
+}
+
+// 考点卡片模型
+model StudyCard {
+  id          String   @id @default(cuid())
+  userId      String
+  title       String   // 考点标题
+  subject     String   // 学科分类
+  corePoint   String   // 核心考点
+  confusionPoint String? // 易混点
+  example     String?  // 典型例题
+  audioUrl    String?  // 语音文件URL
+  imageUrl    String?  // 简笔画图片URL
+  sketchPrompt String? // 简笔画提示词
+  difficulty  Int      @default(1) // 难度等级 1-5
+  tags        String?  // 标签，用逗号分隔
+  isPublic    Boolean  @default(false) // 是否公开分享
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  learningRecords LearningRecord[]
+  quizQuestions   QuizQuestion[]
+  sharedCard      SharedCard?
+
+  @@map("study_cards")
+}
+
+// 学习记录模型
+model LearningRecord {
+  id           String   @id @default(cuid())
+  userId       String
+  cardId       String
+  viewCount    Int      @default(0) // 查看次数
+  correctCount Int      @default(0) // 答对次数
+  wrongCount   Int      @default(0) // 答错次数
+  lastViewedAt DateTime @default(now()) // 最后查看时间
+  nextReviewAt DateTime? // 下次复习时间（艾宾浩斯曲线）
+  masteryLevel Int      @default(0) // 掌握程度 0-100
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  card StudyCard @relation(fields: [cardId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, cardId])
+  @@map("learning_records")
+}
+
+// 测验题目模型
+model QuizQuestion {
+  id          String   @id @default(cuid())
+  cardId      String
+  question    String   // 题目内容
+  options     String?  // 选择题选项，JSON格式
+  correctAnswer String // 正确答案
+  explanation String?  // 解析
+  questionType String  @default("choice") // 题目类型：choice, fill, judge
+  createdAt   DateTime @default(now())
+
+  card        StudyCard    @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  quizResults QuizResult[]
+
+  @@map("quiz_questions")
+}
+
+// 测验结果模型
+model QuizResult {
+  id         String   @id @default(cuid())
+  userId     String
+  questionId String
+  userAnswer String   // 用户答案
+  isCorrect  Boolean  // 是否正确
+  timeSpent  Int?     // 答题用时（秒）
+  createdAt  DateTime @default(now())
+
+  user     User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  question QuizQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@map("quiz_results")
+}
+
+// 共享卡片模型
+model SharedCard {
+  id          String   @id @default(cuid())
+  cardId      String   @unique
+  userId      String   // 创作者ID
+  price       Float    @default(0.5) // 价格（代币）
+  downloads   Int      @default(0) // 下载次数
+  rating      Float?   // 评分
+  status      String   @default("pending") // 审核状态：pending, approved, rejected
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  card      StudyCard      @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  creator   User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  purchases CardPurchase[]
+
+  @@map("shared_cards")
+}
+
+// 卡片购买记录模型
+model CardPurchase {
+  id           String   @id @default(cuid())
+  buyerId      String
+  sharedCardId String
+  price        Float    // 购买时的价格
+  createdAt    DateTime @default(now())
+
+  buyer      User       @relation(fields: [buyerId], references: [id], onDelete: Cascade)
+  sharedCard SharedCard @relation(fields: [sharedCardId], references: [id], onDelete: Cascade)
+
+  @@unique([buyerId, sharedCardId])
+  @@map("card_purchases")
+}
+
+// 学习会话模型（用于追踪学习进度）
+model StudySession {
+  id        String   @id @default(cuid())
+  userId    String
+  subject   String   // 学科
+  duration  Int      // 学习时长（分钟）
+  cardsStudied Int   // 学习卡片数量
+  accuracy  Float?   // 准确率
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("study_sessions")
 }
