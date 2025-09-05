@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import GlassCard from '@/components/GlassCard';
 import { Input, Button, Loading } from '@/components/ui';
 import { 
@@ -14,7 +14,9 @@ import {
   Brain, 
   Trash2,
   Calendar,
-  TrendingUp
+  TrendingUp,
+  X,
+  Lightbulb
 } from 'lucide-react';
 
 interface StudyCard {
@@ -55,6 +57,8 @@ export default function CardsPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [showFilters, setShowFilters] = useState(false);
+  const [selectedCard, setSelectedCard] = useState<StudyCard | null>(null);
+  const [showCardDetail, setShowCardDetail] = useState(false);
 
   const subjects = [
     '数学', '物理', '化学', '生物', '语文', '英语', 
@@ -136,6 +140,16 @@ export default function CardsPage() {
       console.error('删除卡片失败:', error);
       alert(error instanceof Error ? error.message : '删除卡片失败');
     }
+  };
+
+  const handleCardClick = (card: StudyCard) => {
+    setSelectedCard(card);
+    setShowCardDetail(true);
+  };
+
+  const closeCardDetail = () => {
+    setShowCardDetail(false);
+    setSelectedCard(null);
   };
 
   const getDifficultyColor = (difficulty: number) => {
@@ -324,7 +338,10 @@ export default function CardsPage() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: index * 0.1 }}
               >
-                <GlassCard className="p-6 h-full flex flex-col hover:scale-105 transition-transform cursor-pointer group">
+                <GlassCard 
+                  className="p-6 h-full flex flex-col hover:scale-105 transition-transform cursor-pointer group"
+                  onClick={() => handleCardClick(card)}
+                >
                   {/* 卡片头部 */}
                   <div className="flex justify-between items-start mb-4">
                     <div className="flex-1">
@@ -473,6 +490,183 @@ export default function CardsPage() {
           </motion.div>
         )}
       </div>
+
+      {/* 卡片详情模态框 */}
+      <AnimatePresence>
+        {showCardDetail && selectedCard && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+            <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.9 }}
+            className="bg-gradient-to-br from-purple-900/90 via-blue-900/90 to-indigo-900/90 backdrop-blur-lg border border-white/20 rounded-2xl p-8 max-w-2xl w-full max-h-[90vh] overflow-y-auto"
+          >
+            {/* 模态框头部 */}
+            <div className="flex justify-between items-start mb-6">
+              <div>
+                <h2 className="text-2xl font-bold text-white mb-2">
+                  {selectedCard.title}
+                </h2>
+                <div className="flex items-center gap-3">
+                  <span className="px-3 py-1 bg-blue-500/20 text-blue-300 rounded-full text-sm">
+                    {selectedCard.subject}
+                  </span>
+                  <span className={`px-3 py-1 bg-gray-500/20 rounded-full text-sm ${
+                    getDifficultyColor(selectedCard.difficulty)
+                  }`}>
+                    {getDifficultyText(selectedCard.difficulty)}
+                  </span>
+                  {selectedCard.learningProgress && (
+                    <span className={`px-3 py-1 bg-gray-500/20 rounded-full text-sm ${
+                      getStatusInfo(selectedCard.learningProgress.status).color
+                    }`}>
+                      {getStatusInfo(selectedCard.learningProgress.status).label}
+                    </span>
+                  )}
+                </div>
+              </div>
+              <button
+                onClick={closeCardDetail}
+                className="p-2 hover:bg-white/10 rounded-lg transition-colors"
+              >
+                <X className="w-6 h-6 text-gray-400" />
+              </button>
+            </div>
+
+            {/* 核心考点 */}
+            <div className="mb-6">
+              <div className="flex items-center gap-2 mb-4">
+                <Target className="w-5 h-5 text-purple-400" />
+                <h3 className="text-lg font-semibold text-purple-300">核心考点</h3>
+              </div>
+              <div className="p-4 bg-purple-500/10 border border-purple-500/20 rounded-lg">
+                <p className="text-gray-200 leading-relaxed">
+                  {selectedCard.corePoint}
+                </p>
+              </div>
+            </div>
+
+            {/* 易混淆点 */}
+            {selectedCard.confusionPoint && (
+              <div className="mb-6">
+                <div className="flex items-center gap-2 mb-4">
+                  <Brain className="w-5 h-5 text-yellow-400" />
+                  <h3 className="text-lg font-semibold text-yellow-300">易混淆点</h3>
+                </div>
+                <div className="p-4 bg-yellow-500/10 border border-yellow-500/20 rounded-lg">
+                  <p className="text-gray-200 leading-relaxed">
+                    {selectedCard.confusionPoint}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* 典型例题 */}
+            {selectedCard.example && (
+              <div className="mb-6">
+                <div className="flex items-center gap-2 mb-4">
+                  <BookOpen className="w-5 h-5 text-green-400" />
+                  <h3 className="text-lg font-semibold text-green-300">典型例题</h3>
+                </div>
+                <div className="p-4 bg-green-500/10 border border-green-500/20 rounded-lg">
+                  <p className="text-gray-200 leading-relaxed whitespace-pre-wrap">
+                    {selectedCard.example}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* 记忆辅助 */}
+            {selectedCard.sketchPrompt && (
+              <div className="mb-6">
+                <div className="flex items-center gap-2 mb-4">
+                  <Lightbulb className="w-5 h-5 text-pink-400" />
+                  <h3 className="text-lg font-semibold text-pink-300">记忆辅助</h3>
+                </div>
+                <div className="p-4 bg-pink-500/10 border border-pink-500/20 rounded-lg">
+                  <p className="text-gray-200 leading-relaxed">
+                    {selectedCard.sketchPrompt}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* 学习进度 */}
+            {selectedCard.learningProgress && (
+              <div className="mb-6">
+                <div className="flex items-center gap-2 mb-4">
+                  <TrendingUp className="w-5 h-5 text-blue-400" />
+                  <h3 className="text-lg font-semibold text-blue-300">学习进度</h3>
+                </div>
+                <div className="p-4 bg-blue-500/10 border border-blue-500/20 rounded-lg">
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <span className="text-gray-400">复习次数:</span>
+                      <span className="text-white ml-2">{selectedCard.learningProgress.reviewCount}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-400">正确次数:</span>
+                      <span className="text-white ml-2">{selectedCard.learningProgress.correctCount}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-400">正确率:</span>
+                      <span className="text-white ml-2">
+                        {selectedCard.learningProgress.reviewCount > 0 
+                          ? Math.round((selectedCard.learningProgress.correctCount / selectedCard.learningProgress.reviewCount) * 100)
+                          : 0}%
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-gray-400">下次复习:</span>
+                      <span className="text-white ml-2">
+                        {formatDate(selectedCard.learningProgress.nextReviewAt)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 标签 */}
+            {selectedCard.tags && selectedCard.tags.length > 0 && (
+              <div className="mb-6">
+                <h3 className="text-lg font-semibold text-gray-300 mb-3">标签</h3>
+                <div className="flex flex-wrap gap-2">
+                  {selectedCard.tags.map((tag, index) => (
+                    <span
+                      key={index}
+                      className="px-3 py-1 bg-gray-500/20 text-gray-300 rounded-full text-sm"
+                    >
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* 操作按钮 */}
+            <div className="flex gap-3 pt-4 border-t border-white/10">
+              <Button
+                onClick={() => {
+                  closeCardDetail();
+                  router.push('/study');
+                }}
+                className="flex-1"
+              >
+                开始学习
+              </Button>
+              <Button
+                onClick={closeCardDetail}
+                variant="outline"
+                className="flex-1"
+              >
+                关闭
+              </Button>
+            </div>
+          </motion.div>
+           </div>
+         )}
+      </AnimatePresence>
     </div>
   );
 }
