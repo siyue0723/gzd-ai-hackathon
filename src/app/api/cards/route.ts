@@ -151,7 +151,7 @@ export async function DELETE(request: NextRequest) {
     const card = await prisma.studyCard.findFirst({
       where: {
         id: cardId,
-        createdBy: payload.userId
+        userId: payload.userId
       }
     });
 

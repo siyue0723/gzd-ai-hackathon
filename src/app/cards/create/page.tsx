@@ -27,12 +27,18 @@ export default function CreateCardPage() {
     subject: ''
   });
   const [isLoading, setIsLoading] = useState(false);
-  const [generatedCard, setGeneratedCard] = useState<StudyCard | null>(null);
+
   const [generatedCards, setGeneratedCards] = useState<StudyCard[]>([]);
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
-  const [generateMode, setGenerateMode] = useState<'single' | 'multiple'>('single');
+  
+  // 流式生成相关状态
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [streamProgress, setStreamProgress] = useState({ current: 0, total: 0 });
+  const [streamMessage, setStreamMessage] = useState('');
+  const [currentGeneratingCard, setCurrentGeneratingCard] = useState<number | null>(null);
+
   const [inputMode, setInputMode] = useState<'text' | 'file'>('text');
 
   const subjects = [
@@ -108,11 +114,15 @@ export default function CreateCardPage() {
       return;
     }
 
-    setIsLoading(true);
+    // 重置状态
+    setIsLoading(false);
+    setIsStreaming(true);
     setError('');
     setSuccessMessage('');
-    setGeneratedCard(null);
     setGeneratedCards([]);
+    setStreamProgress({ current: 0, total: 0 });
+    setStreamMessage('');
+    setCurrentGeneratingCard(null);
 
     try {
       const token = localStorage.getItem('token');
@@ -121,61 +131,95 @@ export default function CreateCardPage() {
         return;
       }
 
-      if (generateMode === 'single') {
-        // 单张卡片生成
-        const response = await fetch('/api/cards/generate', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`
-          },
-          body: JSON.stringify({
-            input: inputContent,
-            subject: formData.subject
-          })
-        });
+      // 使用流式API生成卡片
+      const response = await fetch('/api/cards/generate-stream', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          input: inputContent,
+          subject: formData.subject
+        })
+      });
 
-        const data = await response.json();
+      if (!response.ok) {
+        throw new Error('网络请求失败');
+      }
 
-        if (!response.ok) {
-          throw new Error(data.error || '生成卡片失败');
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error('无法读取响应流');
+      }
+
+      const decoder = new TextDecoder();
+      const newCards: StudyCard[] = [];
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value);
+        const lines = chunk.split('\n');
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6));
+              
+              switch (data.type) {
+                case 'start':
+                  setStreamMessage(data.message);
+                  setStreamProgress({ current: 0, total: data.totalCards });
+                  break;
+                  
+                case 'progress':
+                  setStreamMessage(data.message);
+                  setCurrentGeneratingCard(data.currentCard);
+                  setStreamProgress({ current: data.currentCard - 1, total: data.totalCards });
+                  break;
+                  
+                case 'card':
+                  // 处理tags字段：将逗号分隔的字符串转换为数组
+                  const processedCard = {
+                    ...data.card,
+                    tags: typeof data.card.tags === 'string' 
+                      ? data.card.tags.split(',').filter(tag => tag.trim()) 
+                      : data.card.tags || []
+                  };
+                  newCards.push(processedCard);
+                  setGeneratedCards([...newCards]);
+                  setStreamProgress({ current: data.currentCard, total: data.totalCards });
+                  break;
+                  
+                case 'complete':
+                  setStreamMessage('');
+                  setCurrentGeneratingCard(null);
+                  setSuccessMessage(data.message);
+                  break;
+                  
+                case 'error':
+                  throw new Error(data.message);
+              }
+            } catch (parseError) {
+              console.error('解析SSE数据失败:', parseError);
+            }
+          }
         }
-
-        setGeneratedCard(data.card);
-        setSuccessMessage('成功生成学习卡片！');
-      } else {
-        // 批量卡片生成
-        const response = await fetch('/api/cards/generate-multiple', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`
-          },
-          body: JSON.stringify({
-            input: inputContent,
-            subject: formData.subject
-          })
-        });
-
-        const data = await response.json();
-
-        if (!response.ok) {
-          throw new Error(data.error || '生成卡片失败');
-        }
-
-        setGeneratedCards(data.cards);
-        setSuccessMessage(`成功生成并保存了 ${data.cards.length} 张学习卡片！`);
       }
     } catch (error) {
-      console.error('生成卡片失败:', error);
+      console.error('流式生成失败:', error);
       setError(error instanceof Error ? error.message : '生成卡片失败');
     } finally {
-      setIsLoading(false);
+      setIsStreaming(false);
+      setStreamMessage('');
+      setCurrentGeneratingCard(null);
     }
   };
 
   const handleCreateAnother = () => {
-    setGeneratedCard(null);
+    setGeneratedCards([]);
     setFormData({ input: '', subject: '' });
     setError('');
     setSuccessMessage('');
@@ -213,7 +257,7 @@ export default function CreateCardPage() {
           </p>
         </motion.div>
 
-        {!generatedCard ? (
+        {generatedCards.length === 0 ? (
           /* 输入表单 */
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -276,36 +320,7 @@ export default function CreateCardPage() {
                   </div>
                 </div>
 
-                {/* 生成模式选择 */}
-                <div>
-                  <label className="block text-white font-medium mb-3">
-                    生成模式
-                  </label>
-                  <div className="flex space-x-4">
-                    <button
-                      type="button"
-                      onClick={() => setGenerateMode('single')}
-                      className={`px-4 py-2 rounded-lg border ${
-                        generateMode === 'single'
-                          ? 'bg-green-600 text-white border-green-600'
-                          : 'bg-white/10 text-gray-300 border-white/20 hover:bg-white/20'
-                      }`}
-                    >
-                      单张卡片
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setGenerateMode('multiple')}
-                      className={`px-4 py-2 rounded-lg border ${
-                        generateMode === 'multiple'
-                          ? 'bg-green-600 text-white border-green-600'
-                          : 'bg-white/10 text-gray-300 border-white/20 hover:bg-white/20'
-                      }`}
-                    >
-                      批量生成 (2-5张)
-                    </button>
-                  </div>
-                </div>
+
 
                 {/* 内容输入区域 */}
                 {inputMode === 'text' ? (
@@ -394,10 +409,15 @@ export default function CreateCardPage() {
                 {/* 提交按钮 */}
                 <Button
                   type="submit"
-                  disabled={isLoading || (inputMode === 'text' ? !formData.input.trim() : !uploadedFile)}
+                  disabled={isLoading || isStreaming || (inputMode === 'text' ? !formData.input.trim() : !uploadedFile)}
                   className="w-full py-4 text-lg font-medium"
                 >
-                  {isLoading ? (
+                  {isStreaming ? (
+                    <div className="flex items-center justify-center gap-2">
+                      <Loading size="sm" />
+                      {streamMessage || 'AI 正在智能生成卡片...'}
+                    </div>
+                  ) : isLoading ? (
                     <div className="flex items-center justify-center gap-2">
                       <Loading size="sm" />
                       AI 正在生成卡片...
@@ -420,122 +440,43 @@ export default function CreateCardPage() {
             transition={{ delay: 0.2 }}
             className="space-y-6"
           >
-            {/* 单张卡片预览 */}
-            {generatedCard && (
-              <>
-                <GlassCard className="p-8">
-                  <div className="flex items-center justify-between mb-6">
-                    <h2 className="text-2xl font-bold text-white flex items-center gap-2">
-                      <BookOpen className="text-blue-400" />
-                      {generatedCard.title}
-                    </h2>
-                    <div className="flex items-center gap-4">
-                      <span className="px-3 py-1 bg-blue-500/20 text-blue-300 rounded-full text-sm">
-                        {generatedCard.subject}
-                      </span>
-                      <span className={`px-3 py-1 bg-gray-500/20 rounded-full text-sm ${
-                        getDifficultyColor(generatedCard.difficulty)
-                      }`}>
-                        {getDifficultyText(generatedCard.difficulty)}
-                      </span>
-                    </div>
+            {/* 流式生成进度显示 */}
+            {isStreaming && (
+              <GlassCard className="p-6">
+                <div className="space-y-4">
+                  <div className="flex items-center gap-3">
+                    <Loading size="sm" />
+                    <h3 className="text-lg font-semibold text-white">AI 正在智能生成卡片</h3>
                   </div>
-
-                  <div className="grid md:grid-cols-2 gap-6">
-                    {/* 核心考点 */}
-                    <div className="space-y-4">
-                      <h3 className="text-lg font-semibold text-purple-300 flex items-center gap-2">
-                        <Target className="w-5 h-5" />
-                        核心考点
-                      </h3>
-                      <div className="p-4 bg-purple-500/10 border border-purple-500/20 rounded-lg">
-                        <p className="text-gray-200 leading-relaxed">
-                          {generatedCard.corePoint}
-                        </p>
+                  
+                  {streamProgress.total > 0 && (
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-sm text-gray-300">
+                        <span>生成进度</span>
+                        <span>{streamProgress.current}/{streamProgress.total}</span>
                       </div>
-                    </div>
-
-                    {/* 易混点 */}
-                    {generatedCard.confusionPoint && (
-                      <div className="space-y-4">
-                        <h3 className="text-lg font-semibold text-yellow-300 flex items-center gap-2">
-                          <Brain className="w-5 h-5" />
-                          易混淆点
-                        </h3>
-                        <div className="p-4 bg-yellow-500/10 border border-yellow-500/20 rounded-lg">
-                          <p className="text-gray-200 leading-relaxed">
-                            {generatedCard.confusionPoint}
-                          </p>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* 典型例题 */}
-                  {generatedCard.example && (
-                    <div className="mt-6">
-                      <h3 className="text-lg font-semibold text-green-300 mb-4">
-                        典型例题
-                      </h3>
-                      <div className="p-4 bg-green-500/10 border border-green-500/20 rounded-lg">
-                        <p className="text-gray-200 leading-relaxed whitespace-pre-wrap">
-                          {generatedCard.example}
-                        </p>
+                      <div className="w-full bg-gray-700 rounded-full h-2">
+                        <div 
+                          className="bg-blue-500 h-2 rounded-full transition-all duration-300"
+                          style={{ width: `${(streamProgress.current / streamProgress.total) * 100}%` }}
+                        />
                       </div>
                     </div>
                   )}
-
-                  {/* 简笔画提示 */}
-                  {generatedCard.sketchPrompt && (
-                    <div className="mt-6">
-                      <h3 className="text-lg font-semibold text-pink-300 mb-4">
-                        记忆辅助图像
-                      </h3>
-                      <div className="p-4 bg-pink-500/10 border border-pink-500/20 rounded-lg">
-                        <p className="text-gray-200 leading-relaxed">
-                          {generatedCard.sketchPrompt}
-                        </p>
-                      </div>
+                  
+                  {streamMessage && (
+                    <p className="text-gray-300 text-sm">{streamMessage}</p>
+                  )}
+                  
+                  {currentGeneratingCard && (
+                    <div className="mt-4 p-4 bg-blue-500/10 border border-blue-500/20 rounded-lg">
+                      <p className="text-blue-300 text-sm font-medium mb-1">
+                        正在生成第 {currentGeneratingCard} 张卡片...
+                      </p>
                     </div>
                   )}
-
-                  {/* 标签 */}
-                  {generatedCard.tags.length > 0 && (
-                    <div className="mt-6">
-                      <h3 className="text-lg font-semibold text-gray-300 mb-3">
-                        相关标签
-                      </h3>
-                      <div className="flex flex-wrap gap-2">
-                        {generatedCard.tags.map((tag, index) => (
-                          <span
-                            key={index}
-                            className="px-3 py-1 bg-gray-500/20 text-gray-300 rounded-full text-sm"
-                          >
-                            #{tag}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </GlassCard>
-
-                {/* 操作按钮 */}
-                <div className="flex gap-4">
-                  <Button
-                    onClick={handleCreateAnother}
-                    className="flex-1 py-3"
-                    variant="outline"
-                  >
-                    创建新卡片
-                  </Button>
-                  <Button
-                    onClick={() => router.push('/cards')}
-                    className="flex-1 py-3"
-                  >
-                    查看我的卡片
-                  </Button>
                 </div>
-              </>
+              </GlassCard>
             )}
 
             {/* 批量生成的卡片 */}

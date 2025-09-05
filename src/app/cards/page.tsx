@@ -120,13 +120,12 @@ export default function CardsPage() {
 
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch(`/api/cards`, {
+      const response = await fetch(`/api/cards?id=${cardId}`, {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ cardId })
+        }
       });
 
       if (!response.ok) {
