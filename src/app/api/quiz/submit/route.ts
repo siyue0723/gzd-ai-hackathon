@@ -84,18 +84,20 @@ export async function POST(request: NextRequest) {
     const accuracy = Math.round((correctCount / answers.length) * 100);
     const cardId = questions[0].cardId;
 
-    // 保存测验结果
-    const quizResult = await prisma.quizResult.create({
-      data: {
-        userId: payload.userId,
-        cardId,
-        totalQuestions: answers.length,
-        correctAnswers: correctCount,
-        score: totalScore,
-        timeSpent,
-        completedAt: new Date()
-      }
-    });
+    // 保存每个题目的测验结果
+    const savedResults = await Promise.all(
+      results.map(result => 
+        prisma.quizResult.create({
+          data: {
+            userId: payload.userId,
+            questionId: result.questionId,
+            userAnswer: result.userAnswer.toString(),
+            isCorrect: result.isCorrect,
+            timeSpent: Math.round(timeSpent / answers.length)
+          }
+        })
+      )
+    );
 
     // 为错题生成AI分析和迷你卡片
     const errorAnalyses = [];
@@ -126,7 +128,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       result: {
-        id: quizResult.id,
+        id: savedResults[0]?.id || 'temp-id',
         totalQuestions: answers.length,
         correctAnswers: correctCount,
         accuracy,
@@ -134,7 +136,7 @@ export async function POST(request: NextRequest) {
         timeSpent,
         results,
         errorAnalyses,
-        completedAt: quizResult.completedAt
+        completedAt: new Date()
       }
     });
   } catch (error) {

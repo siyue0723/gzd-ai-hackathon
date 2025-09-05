@@ -60,17 +60,17 @@ export async function POST(request: NextRequest) {
             options: question.options ? question.options.join('|||') : null,
             correctAnswer: question.correctAnswer,
             explanation: question.explanation,
-            questionType: question.questionType,
-            createdBy: payload.userId
+            questionType: question.questionType
           }
         });
 
         return {
           id: savedQuestion.id,
           question: savedQuestion.question,
-          options: savedQuestion.options ? savedQuestion.options.split('|||') : null,
-          questionType: savedQuestion.questionType,
-          // 不返回正确答案和解析，防止作弊
+          options: savedQuestion.options ? savedQuestion.options.split('|||') : [],
+          correctAnswer: savedQuestion.correctAnswer,
+          explanation: savedQuestion.explanation,
+          questionType: savedQuestion.questionType
         };
       })
     );
