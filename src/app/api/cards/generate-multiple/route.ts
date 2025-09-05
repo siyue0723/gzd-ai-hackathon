@@ -1,15 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { AIService } from '@/lib/ai-service'
+import { verifyToken } from '@/lib/jwt'
 
 export async function POST(request: NextRequest) {
   try {
     // 验证用户身份
-    const session = await getServerSession(authOptions)
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: '未授权访问' }, { status: 401 })
+    const token = request.headers.get('authorization')?.replace('Bearer ', '')
+    if (!token) {
+      return NextResponse.json({ error: '未提供认证令牌' }, { status: 401 })
+    }
+
+    const payload = verifyToken(token)
+    if (!payload) {
+      return NextResponse.json({ error: '无效的认证令牌' }, { status: 401 })
     }
 
     const body = await request.json()
@@ -20,8 +24,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '请提供有效的学习内容' }, { status: 400 })
     }
 
-    if (input.length > 5000) {
-      return NextResponse.json({ error: '内容过长，请控制在5000字符以内' }, { status: 400 })
+    if (input.length > 15000) {
+      return NextResponse.json({ error: '内容过长，请控制在15000字符以内' }, { status: 400 })
     }
 
     // 使用AI服务批量生成多张卡片
@@ -48,9 +52,9 @@ export async function POST(request: NextRequest) {
             confusionPoint: cardData.confusionPoint || null,
             example: cardData.example || null,
             difficulty: cardData.difficulty,
-            tags: cardData.tags || [],
+            tags: Array.isArray(cardData.tags) ? cardData.tags.join(',') : cardData.tags || null,
             sketchPrompt: sketchPrompt,
-            userId: session.user.id,
+            userId: payload.userId,
           },
         })
 
@@ -58,9 +62,13 @@ export async function POST(request: NextRequest) {
         await prisma.learningRecord.create({
           data: {
             cardId: savedCard.id,
-            userId: session.user.id,
-            status: 'new',
-            nextReviewAt: new Date(),
+            userId: payload.userId,
+            viewCount: 0,
+            correctCount: 0,
+            wrongCount: 0,
+            lastViewedAt: new Date(),
+            nextReviewAt: new Date(Date.now() + 60 * 60 * 1000), // 1小时后复习
+            masteryLevel: 0,
           },
         })
 

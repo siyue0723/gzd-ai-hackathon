@@ -110,19 +110,49 @@ export class AIService {
         return await file.text();
       }
       
-      if (fileType === 'application/pdf' || fileName.endsWith('.pdf')) {
-        // PDF文件处理 - 这里需要使用PDF解析库
-        throw new Error('PDF文件解析功能正在开发中，请先使用文本输入');
-      }
-      
-      if (fileType.includes('word') || fileName.endsWith('.docx') || fileName.endsWith('.doc')) {
-        // Word文件处理 - 这里需要使用Word解析库
-        throw new Error('Word文件解析功能正在开发中，请先使用文本输入');
-      }
-      
-      if (fileType.includes('presentation') || fileName.endsWith('.pptx') || fileName.endsWith('.ppt')) {
-        // PPT文件处理 - 这里需要使用PPT解析库
-        throw new Error('PPT文件解析功能正在开发中，请先使用文本输入');
+      if (fileType === 'application/pdf' || fileName.endsWith('.pdf') || 
+          fileType.includes('word') || fileName.endsWith('.docx') || fileName.endsWith('.doc') ||
+          fileType.includes('presentation') || fileName.endsWith('.pptx') || fileName.endsWith('.ppt')) {
+        // 使用阿里云文档解析服务
+        const { DocParserService } = await import('./doc-parser');
+        const docParser = new DocParserService();
+        
+        // 检查文件类型是否支持
+        if (!DocParserService.isSupportedFileType(file.name)) {
+          throw new Error('不支持的文件格式');
+        }
+        
+        // 将File对象转换为临时文件路径
+        const buffer = await file.arrayBuffer();
+        const uint8Array = new Uint8Array(buffer);
+        
+        // 在Node.js环境中写入临时文件
+        const fs = await import('fs');
+        const path = await import('path');
+        const os = await import('os');
+        
+        const tempDir = os.tmpdir();
+        const actualTempPath = path.join(tempDir, `${Date.now()}_${file.name}`);
+        
+        fs.writeFileSync(actualTempPath, uint8Array);
+        
+        try {
+          // 调用文档解析服务
+          const result = await docParser.parseDocument(actualTempPath, file.name);
+          
+          if (result.success && result.text) {
+            return result.text;
+          } else {
+            throw new Error(result.error || '文档解析失败');
+          }
+        } finally {
+          // 清理临时文件
+          try {
+            fs.unlinkSync(actualTempPath);
+          } catch (error) {
+            console.warn('清理临时文件失败:', error);
+          }
+        }
       }
       
       throw new Error('不支持的文件格式，请上传TXT、PDF、Word或PPT文件');

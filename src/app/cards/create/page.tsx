@@ -30,6 +30,7 @@ export default function CreateCardPage() {
   const [generatedCard, setGeneratedCard] = useState<StudyCard | null>(null);
   const [generatedCards, setGeneratedCards] = useState<StudyCard[]>([]);
   const [error, setError] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [generateMode, setGenerateMode] = useState<'single' | 'multiple'>('single');
   const [inputMode, setInputMode] = useState<'text' | 'file'>('text');
@@ -39,11 +40,40 @@ export default function CreateCardPage() {
     '历史', '地理', '政治', '计算机', '经济学', '心理学', '其他'
   ];
 
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
-      setUploadedFile(file);
-      setError('');
+      try {
+        setIsLoading(true);
+        
+        // 创建FormData
+        const formData = new FormData();
+        formData.append('file', file);
+        
+        // 调用文件解析API
+        const response = await fetch('/api/cards/parse-file', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+          },
+          body: formData
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+          setFormData(prev => ({ ...prev, input: result.text }));
+          setUploadedFile(file);
+          setError('');
+        } else {
+          throw new Error(result.error || '文件解析失败');
+        }
+      } catch (error: any) {
+        console.error('文件上传错误:', error);
+        setError(error.message || '文件解析失败');
+      } finally {
+        setIsLoading(false);
+      }
     }
   };
 
@@ -65,22 +95,22 @@ export default function CreateCardPage() {
         return;
       }
       
-      try {
-        // 这里应该调用文件解析API，暂时使用文件名作为内容
-        inputContent = `文件：${uploadedFile.name}\n\n请注意：文件解析功能正在开发中，请先使用文本输入模式。`;
-      } catch (error) {
-        setError('文件解析失败，请重试');
+      if (!formData.input.trim()) {
+        setError('文件内容为空或解析失败，请重新上传文件');
         return;
       }
+      
+      inputContent = formData.input.trim();
     }
 
-    if (inputContent.length > 5000) {
-      setError('输入内容过长，请控制在5000字符以内');
+    if (inputContent.length > 15000) {
+      setError('输入内容过长，请控制在15000字符以内');
       return;
     }
 
     setIsLoading(true);
     setError('');
+    setSuccessMessage('');
     setGeneratedCard(null);
     setGeneratedCards([]);
 
@@ -112,6 +142,7 @@ export default function CreateCardPage() {
         }
 
         setGeneratedCard(data.card);
+        setSuccessMessage('成功生成学习卡片！');
       } else {
         // 批量卡片生成
         const response = await fetch('/api/cards/generate-multiple', {
@@ -133,6 +164,7 @@ export default function CreateCardPage() {
         }
 
         setGeneratedCards(data.cards);
+        setSuccessMessage(`成功生成并保存了 ${data.cards.length} 张学习卡片！`);
       }
     } catch (error) {
       console.error('生成卡片失败:', error);
@@ -146,6 +178,7 @@ export default function CreateCardPage() {
     setGeneratedCard(null);
     setFormData({ input: '', subject: '' });
     setError('');
+    setSuccessMessage('');
   };
 
   const getDifficultyColor = (difficulty: number) => {
@@ -323,9 +356,14 @@ export default function CreateCardPage() {
                         </div>
                       </label>
                     </div>
-                    {uploadedFile && (
-                      <div className="mt-2 text-sm text-orange-400">
-                        ⚠️ 文件解析功能正在开发中，当前仅支持文本输入模式
+                    {uploadedFile && formData.input && (
+                      <div className="mt-2 text-sm text-green-400">
+                        ✅ 文件解析成功：{uploadedFile.name} ({formData.input.length} 字符)
+                      </div>
+                    )}
+                    {uploadedFile && !formData.input && (
+                      <div className="mt-2 text-sm text-yellow-400">
+                        ⏳ 正在解析文件...
                       </div>
                     )}
                   </div>
@@ -339,6 +377,17 @@ export default function CreateCardPage() {
                     className="p-4 bg-red-500/20 border border-red-500/30 rounded-lg text-red-300"
                   >
                     {error}
+                  </motion.div>
+                )}
+
+                {/* 成功提示 */}
+                {successMessage && (
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    className="p-4 bg-green-500/20 border border-green-500/30 rounded-lg text-green-300"
+                  >
+                    {successMessage}
                   </motion.div>
                 )}
 
@@ -596,6 +645,7 @@ export default function CreateCardPage() {
                       setFormData({ input: '', subject: '' });
                       setUploadedFile(null);
                       setError('');
+                      setSuccessMessage('');
                     }}
                     className="flex-1 py-3"
                     variant="outline"

@@ -9,6 +9,9 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@alicloud/credentials": "^2.4.4",
+    "@alicloud/docmind-api20220711": "^1.4.10",
+    "@alicloud/tea-util": "^1.4.10",
     "@nextui-org/react": "^2.6.11",
     "@prisma/client": "^6.15.0",
     "@radix-ui/react-dialog": "^1.1.15",
