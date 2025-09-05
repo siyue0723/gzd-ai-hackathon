@@ -29,6 +29,109 @@ export interface QuizQuestionData {
 // AI服务类
 export class AIService {
   /**
+   * 从文件内容批量生成多张卡片
+   */
+  static async generateMultipleCards(input: string, subject?: string): Promise<StudyCardData[]> {
+    try {
+      const prompt = `
+请将以下学习内容智能拆解为多张闪记卡片。根据内容的复杂程度和知识点数量，生成2-5张相关但独立的卡片：
+
+输入内容：${input}
+学科：${subject || '未指定'}
+
+请按照以下JSON数组格式返回：
+[
+  {
+    "title": "考点标题1",
+    "subject": "学科分类",
+    "corePoint": "核心考点内容，要简洁明了",
+    "confusionPoint": "易混淆的知识点或常见错误",
+    "example": "典型例题或应用场景",
+    "difficulty": 1-5的难度等级,
+    "tags": ["标签1", "标签2"]
+  },
+  {
+    "title": "考点标题2",
+    "subject": "学科分类",
+    "corePoint": "核心考点内容，要简洁明了",
+    "confusionPoint": "易混淆的知识点或常见错误",
+    "example": "典型例题或应用场景",
+    "difficulty": 1-5的难度等级,
+    "tags": ["标签1", "标签2"]
+  }
+]
+
+要求：
+1. 每张卡片应该聚焦一个独立的知识点
+2. 卡片之间要有逻辑关联但内容不重复
+3. 根据内容复杂度合理确定卡片数量（2-5张）
+4. 核心考点要提炼关键信息，便于记忆
+5. 易混点要指出容易搞错的地方
+6. 例题要具有代表性
+7. 难度等级要合理评估
+8. 标签要有助于分类检索
+`;
+
+      const response = await client.chat.completions.create({
+        model: 'qwen-plus',
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.7,
+      });
+
+      const content = response.choices[0]?.message?.content;
+      if (!content) {
+        throw new Error('AI响应为空');
+      }
+
+      // 提取JSON数组内容
+      const jsonMatch = content.match(/\[[\s\S]*\]/);
+      if (!jsonMatch) {
+        throw new Error('无法解析AI响应');
+      }
+
+      const cardsData = JSON.parse(jsonMatch[0]) as StudyCardData[];
+      return cardsData;
+    } catch (error) {
+      console.error('批量生成学习卡片失败:', error);
+      throw new Error('AI服务暂时不可用，请稍后重试');
+    }
+  }
+
+  /**
+   * 从上传的文件中提取文本内容
+   */
+  static async extractTextFromFile(file: File): Promise<string> {
+    try {
+      const fileType = file.type;
+      const fileName = file.name.toLowerCase();
+      
+      // 支持的文件类型
+      if (fileType === 'text/plain' || fileName.endsWith('.txt')) {
+        return await file.text();
+      }
+      
+      if (fileType === 'application/pdf' || fileName.endsWith('.pdf')) {
+        // PDF文件处理 - 这里需要使用PDF解析库
+        throw new Error('PDF文件解析功能正在开发中，请先使用文本输入');
+      }
+      
+      if (fileType.includes('word') || fileName.endsWith('.docx') || fileName.endsWith('.doc')) {
+        // Word文件处理 - 这里需要使用Word解析库
+        throw new Error('Word文件解析功能正在开发中，请先使用文本输入');
+      }
+      
+      if (fileType.includes('presentation') || fileName.endsWith('.pptx') || fileName.endsWith('.ppt')) {
+        // PPT文件处理 - 这里需要使用PPT解析库
+        throw new Error('PPT文件解析功能正在开发中，请先使用文本输入');
+      }
+      
+      throw new Error('不支持的文件格式，请上传TXT、PDF、Word或PPT文件');
+    } catch (error) {
+      console.error('文件文本提取失败:', error);
+      throw error;
+    }
+  }
+  /**
    * 智能拆解考点并生成闪记卡片
    */
   static async generateStudyCard(input: string, subject?: string): Promise<StudyCardData> {
